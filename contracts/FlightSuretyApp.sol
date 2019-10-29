@@ -5,6 +5,7 @@ pragma solidity ^0.4.25;
 // More info: https://www.nccgroup.trust/us/about-us/newsroom-and-events/blog/2018/november/smart-contract-insecurity-bad-arithmetic/
 
 import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
+import "./FlightSuretyData.sol";
 
 /************************************************** */
 /* FlightSurety Smart Contract                      */
@@ -24,12 +25,26 @@ contract FlightSuretyApp {
     uint8 private constant STATUS_CODE_LATE_TECHNICAL = 40;
     uint8 private constant STATUS_CODE_LATE_OTHER = 50;
 
+    // 
+    bool private firstAirlineRegistered = false;
+    uint8 private constant NUMBER_OF_AIRLINES_TH = 4;  // if there is smaller, no consensus needed
+
+    // fund requirement
+    uint256 private constant MINIMUM_FUND = 0.001 * 10**18; // minimum 10 ether
+
     address private contractOwner;          // Account used to deploy contract
+    address private dataContract;
+    
+    mapping(address => address[]) private votings;
+    uint8 private constant votingPercentage = 50; 
+    
+    FlightSuretyData public suretyData;
+
 
     struct Flight {
         bool isRegistered;
         uint8 statusCode;
-        uint256 updatedTimestamp;        
+        uint256 updatedTimestamp;
         address airline;
     }
     mapping(bytes32 => Flight) private flights;
@@ -71,10 +86,8 @@ contract FlightSuretyApp {
     * @dev Contract constructor
     *
     */
-    constructor
-                                (
-                                ) 
-                                public 
+    constructor()
+                        public
     {
         contractOwner = msg.sender;
     }
@@ -95,19 +108,59 @@ contract FlightSuretyApp {
     /*                                     SMART CONTRACT FUNCTIONS                             */
     /********************************************************************************************/
 
-  
+
+
+     function registerDataContract (address dataContractAddress) external
+                            requireContractOwner
+    {
+       dataContract = dataContractAddress;
+       suretyData = FlightSuretyData(dataContract);
+    }
+
+
    /**
     * @dev Add an airline to the registration queue
     *
-    */   
-    function registerAirline
-                            (   
-                            )
-                            external
-                            pure
-                            returns(bool success, uint256 votes)
+    */
+
+
+    function registerAirline (address newAirline) external
     {
-        return (success, 0);
+       // get information from data
+       uint8 countAirlines = suretyData.getAirlineCount();
+       uint256 fundOfCaller = suretyData.getFundOfCaller(msg.sender);
+
+       // process by case
+       if (countAirlines==0){
+           suretyData.registerAirline(newAirline);
+       }
+       else if (countAirlines<NUMBER_OF_AIRLINES_TH){
+           if(fundOfCaller >= MINIMUM_FUND){
+               suretyData.registerAirline(newAirline);
+           }
+       }
+       else{
+           if(fundOfCaller >= MINIMUM_FUND){
+               address[] storage multiCalls = votings[newAirline];
+
+               bool isDuplicate = false;
+               for (uint c = 0; c<multiCalls.length; c++){
+                   if (multiCalls[c]==msg.sender){
+                       isDuplicate = true;
+                       break;
+                   }
+               }
+               require(!isDuplicate, 'caller has already called this function!');
+
+               multiCalls.push(msg.sender);
+
+               uint votingthreshold = countAirlines * votingPercentage/100;
+               if (multiCalls.length >= votingthreshold){
+                   suretyData.registerAirline(newAirline);
+               }
+               votings[newAirline] = multiCalls;
+           }
+       }
     }
 
 
@@ -121,7 +174,7 @@ contract FlightSuretyApp {
                                 external
                                 pure
     {
-
+    
     }
     
    /**

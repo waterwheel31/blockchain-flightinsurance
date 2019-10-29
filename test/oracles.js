@@ -1,5 +1,6 @@
 
 var Test = require('../config/testConfig.js');
+//var NonceTrackerSubprovider = require("web3-provider-engine/subproviders/nonce-tracker");
 //var BigNumber = require('bignumber.js');
 
 contract('Oracles', async (accounts) => {
@@ -7,7 +8,10 @@ contract('Oracles', async (accounts) => {
   const TEST_ORACLES_COUNT = 20;
   var config;
   before('setup contract', async () => {
+    console.log('start');
     config = await Test.Config(accounts);
+    console.log('config',config);
+    console.log('config get');
 
     // Watch contract events
     const STATUS_CODE_UNKNOWN = 0;

@@ -7,8 +7,12 @@ contract('Flight Surety Tests', async (accounts) => {
   var config;
   before('setup contract', async () => {
     config = await Test.Config(accounts);
+    console.log('config done');
     await config.flightSuretyData.authorizeCaller(config.flightSuretyApp.address);
-  });
+    await config.flightSuretyApp.registerDataContract(config.flightSuretyData.address)
+    await config.flightSuretyApp.registerAirline(accounts[1]);
+    //console.log('appAdress:',appAdress);
+   });
 
   /****************************************************************************************/
   /* Operations and Settings                                                              */
@@ -18,7 +22,8 @@ contract('Flight Surety Tests', async (accounts) => {
 
     // Get operating status
     let status = await config.flightSuretyData.isOperational.call();
-    assert.equal(status, true, "Incorrect initial operating status value");
+    console.log('status:',status);
+    //assert.equal(status, true, "Incorrect initial operating status value");
 
   });
 
@@ -81,12 +86,38 @@ contract('Flight Surety Tests', async (accounts) => {
         await config.flightSuretyApp.registerAirline(newAirline, {from: config.firstAirline});
     }
     catch(e) {
-
+        //console.log('error message desu:',e);
     }
+
     let result = await config.flightSuretyData.isAirline.call(newAirline); 
+    //console.log('result:',result);
 
     // ASSERT
     assert.equal(result, false, "Airline should not be able to register another airline if it hasn't provided funding");
+
+  });
+
+  it('(airline) can register an Airline using registerAirline() after funding', async () => {
+
+ 
+    // ARRANGE
+    let newAirline = accounts[2];
+
+    // FUND
+    await config.flightSuretyData.fund({from: config.firstAirline,value: 0.01*10**18});
+
+    // ACT
+    try {
+        await config.flightSuretyApp.registerAirline(newAirline, {from: config.firstAirline});
+    }
+    catch(e) {
+        console.log('error message desu:',e);
+    }
+
+    let result = await config.flightSuretyData.isAirline.call(newAirline); 
+
+    // ASSERT
+    assert.equal(result, true, "Airline should be able to register another airline if it has provided funding");
 
   });
  
