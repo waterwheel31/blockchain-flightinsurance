@@ -18,6 +18,24 @@ contract FlightSuretyData {
     mapping(address => uint256) private funds;                       // funded by each airline, unit: wei
 
 
+    struct Flight {
+        bool isRegistered;
+        uint8 statusCode;
+        uint256 updatedTimestamp;
+        address airline;
+    }
+    mapping(bytes32 => Flight) private flights;
+
+
+    struct Policy{
+        address buyer;
+        uint256 value;
+        uint8 returnPercent;
+    }
+    mapping(bytes32 => Policy[]) private insurances;
+
+    // mapping(address => uint256) private payables;
+
     /********************************************************************************************/
     /*                                       EVENT DEFINITIONS                                  */
     /********************************************************************************************/
@@ -147,38 +165,73 @@ contract FlightSuretyData {
         return funds[caller];
     }
 
+
+    function registerFlight(address airline, string flight, uint8 status, uint256 Timestamp)
+                            external
+                            requireIsAuthorized
+    {
+        Flight memory newFlight = Flight (true, status, Timestamp, airline);
+        bytes32 key = getFlightKey(airline,flight, Timestamp);
+        flights[key] = newFlight;
+    }
+
+
+    function changeFlightStatus (bytes32 key, uint8 newStatusCode) external requireIsAuthorized
+    {
+        flights[key].statusCode = newStatusCode;
+    }
+
    /**
     * @dev Buy insurance for a flight
     *
     */
-    function buy () external payable
-    {
 
+    function getFlightStatus (bytes32 key) external requireIsAuthorized returns (uint8)
+    {
+        uint8 status = flights[key].statusCode;
+        return (status);
     }
+
+
+    function buy (address buyer, address airline,string flight,
+                  uint256 timestamp, uint256 value, uint8 returnPercent)
+                        external payable
+                        requireIsAuthorized
+    {
+        bytes32 flightKey = getFlightKey(airline,flight, timestamp);
+        Policy memory policy = Policy(buyer, value, returnPercent);
+        insurances[flightKey].push(policy);
+    }
+
 
     /**
      *  @dev Credits payouts to insurees
     */
-    function creditInsurees
-                                (
-                                )
-                                external
-                                pure
+    function creditInsurees (bytes32 key, bool delayed)
+                    external payable requireIsAuthorized
     {
+        Policy[] memory policiesPayable = insurances[key];
+        for (uint i = 0; i<policiesPayable.length; i++){
+            address payee = policiesPayable[i].buyer;
+            uint256 amountToPay = policiesPayable[i].value.mul(policiesPayable[i].returnPercent/100);
+            insurances[key][i].value = 0;
+            if (delayed == true){
+                // payables[payee] = payables[payee] += amountToPay;
+                payee.transfer(amountToPay);
+            }
+        }
     }
-    
 
     /**
      *  @dev Transfers eligible payout funds to insuree
      *
     */
-    function pay
-                            (
-                            )
-                            external
-                            pure
+    /*
+    function pay(address payee, uint256 value) private payable
     {
+        payee.transfer(value);
     }
+    */
 
    /**
     * @dev Initial funding for the insurance. Unless there are too many delayed flights
@@ -186,17 +239,23 @@ contract FlightSuretyData {
     *
     */   
     function fund () public payable
-            
     {
         require (airlines[msg.sender] == true,'the airline is not registered yet');
         funds[msg.sender] += msg.value;
     }
 
-    function getFlightKey (address airline, string memory flight, uint256 timestamp)
+    function getFlightKey (address airline, string flight, uint256 timestamp)
                         internal pure
                         returns(bytes32)
     {
         return keccak256(abi.encodePacked(airline, flight, timestamp));
+    }
+
+    function getPolicyKey (address buyer, uint256 value, uint8 returnPercent)
+                        internal pure
+                        returns(bytes32)
+    {
+        return keccak256(abi.encodePacked(buyer, value, returnPercent));
     }
 
     /**

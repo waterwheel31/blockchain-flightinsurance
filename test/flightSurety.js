@@ -7,11 +7,12 @@ contract('Flight Surety Tests', async (accounts) => {
   var config;
   before('setup contract', async () => {
     config = await Test.Config(accounts);
+    console.log('accounts[1]', accounts[1])
     console.log('config done');
     await config.flightSuretyData.authorizeCaller(config.flightSuretyApp.address);
     await config.flightSuretyApp.registerDataContract(config.flightSuretyData.address)
+    console.log('config done');
     await config.flightSuretyApp.registerAirline(accounts[1]);
-    //console.log('appAdress:',appAdress);
    });
 
   /****************************************************************************************/
@@ -24,7 +25,6 @@ contract('Flight Surety Tests', async (accounts) => {
     let status = await config.flightSuretyData.isOperational.call();
     console.log('status:',status);
     //assert.equal(status, true, "Incorrect initial operating status value");
-
   });
 
   it(`(multiparty) can block access to setOperatingStatus() for non-Contract Owner account`, async function () {

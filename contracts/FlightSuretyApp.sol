@@ -36,18 +36,11 @@ contract FlightSuretyApp {
     address private dataContract;
     
     mapping(address => address[]) private votings;
-    uint8 private constant votingPercentage = 50; 
+    uint8 private constant votingPercentage = 50;
     
     FlightSuretyData public suretyData;
 
-
-    struct Flight {
-        bool isRegistered;
-        uint8 statusCode;
-        uint256 updatedTimestamp;
-        address airline;
-    }
-    mapping(bytes32 => Flight) private flights;
+    uint8 private returnPercent = 150;   // % of payback when applicable. 150 means x1.5 for example
 
  
     /********************************************************************************************/
@@ -127,6 +120,9 @@ contract FlightSuretyApp {
     function registerAirline (address newAirline) external
     {
        // get information from data
+       bool isAirline = suretyData.isAirline(msg.sender);
+       bool isOwner = (msg.sender == contractOwner);
+       require (isAirline || isOwner, 'only airline or owner can register airline');
        uint8 countAirlines = suretyData.getAirlineCount();
        uint256 fundOfCaller = suretyData.getFundOfCaller(msg.sender);
 
@@ -167,20 +163,20 @@ contract FlightSuretyApp {
    /**
     * @dev Register a future flight for insuring.
     *
-    */  
-    function registerFlight
-                                (
-                                )
-                                external
-                                pure
+    */
+    function registerFlight (string flight, uint256 Timestamp) external
     {
-    
+         bool isAirline = suretyData.isAirline(msg.sender);
+         require (isAirline, 'only airline can register flights');
+         uint256 fundOfCaller = suretyData.getFundOfCaller(msg.sender);
+         require (fundOfCaller >= MINIMUM_FUND, 'not enough fund to register');
+
+         suretyData.registerFlight(msg.sender, flight,STATUS_CODE_UNKNOWN, Timestamp);
     }
-    
    /**
     * @dev Called after oracle has updated flight status
     *
-    */  
+    */
     function processFlightStatus
                                 (
                                     address airline,
@@ -189,19 +185,23 @@ contract FlightSuretyApp {
                                     uint8 statusCode
                                 )
                                 internal
-                                pure
     {
+        bytes32 key = keccak256(abi.encodePacked(airline, flight, timestamp));
+        uint8 newStatusCode = statusCode;
+        suretyData.changeFlightStatus(key, newStatusCode);
+
+        if (newStatusCode == STATUS_CODE_LATE_AIRLINE){
+            suretyData.creditInsurees(key, true);
+        }
+        else if (newStatusCode != STATUS_CODE_UNKNOWN){
+            suretyData.creditInsurees(key, false);
+        }
     }
 
 
     // Generate a request for oracles to fetch flight information
-    function fetchFlightStatus
-                        (
-                            address airline,
-                            string flight,
-                            uint256 timestamp                            
-                        )
-                        external
+    function fetchFlightStatus (address airline,string flight,uint256 timestamp)
+                                external
     {
         uint8 index = getRandomIndex(msg.sender);
 
@@ -213,16 +213,26 @@ contract FlightSuretyApp {
                                             });
 
         emit OracleRequest(index, airline, flight, timestamp);
-    } 
+    }
 
+
+    function buyInsurance(address airline, string flight, uint256 timestamp) external payable
+    {
+        bytes32 key = keccak256(abi.encodePacked(airline, flight, timestamp));
+        uint8 flightStatus = suretyData.getFlightStatus(key);
+        require(flightStatus == 0, 'too late. you cannot buy the insurance now');
+        suretyData.buy(msg.sender, airline, flight, timestamp, msg.value, returnPercent);
+    }
+
+    
 
 // region ORACLE MANAGEMENT
 
     // Incremented to add pseudo-randomness at various points
-    uint8 private nonce = 0;    
+    uint8 private nonce = 0;
 
     // Fee to be paid when registering oracle
-    uint256 public constant REGISTRATION_FEE = 1 ether;
+    uint256 public constant REGISTRATION_FEE = 0.001 ether;
 
     // Number of oracles that must respond for valid status
     uint256 private constant MIN_RESPONSES = 3;
@@ -230,7 +240,7 @@ contract FlightSuretyApp {
 
     struct Oracle {
         bool isRegistered;
-        uint8[3] indexes;        
+        uint8[3] indexes;
     }
 
     // Track all registered oracles
@@ -286,7 +296,6 @@ contract FlightSuretyApp {
                             returns(uint8[3])
     {
         require(oracles[msg.sender].isRegistered, "Not registered as an oracle");
-
         return oracles[msg.sender].indexes;
     }
 
@@ -308,7 +317,6 @@ contract FlightSuretyApp {
                         external
     {
         require((oracles[msg.sender].indexes[0] == index) || (oracles[msg.sender].indexes[1] == index) || (oracles[msg.sender].indexes[2] == index), "Index does not match oracle request");
-
 
         bytes32 key = keccak256(abi.encodePacked(index, airline, flight, timestamp)); 
         require(oracleResponses[key].isOpen, "Flight or timestamp do not match oracle request");
@@ -366,10 +374,7 @@ contract FlightSuretyApp {
     }
 
     // Returns array of three non-duplicating integers from 0-9
-    function getRandomIndex
-                            (
-                                address account
-                            )
+    function getRandomIndex (address account)
                             internal
                             returns (uint8)
     {
@@ -387,4 +392,4 @@ contract FlightSuretyApp {
 
 // endregion
 
-}   
+}
